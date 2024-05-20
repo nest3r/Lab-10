@@ -1,68 +1,61 @@
-import json, time
+import requests
+import pyttsx3
+import pyaudio
+import json
+import os
+from vosk import Model, KaldiRecognizer
 
-import pyttsx3, pyaudio, vosk
-
-
-
-class Speech:
-    def __init__(self):
-        self.speaker = 0
-        self.tts = pyttsx3.init('sapi5')
-
-    def set_voice(self, speaker):
-        self.voices = self.tts.getProperty('voices')
-        for count, voice in enumerate(self.voices):
-            if count == 0:
-                print('0')
-                id = voice.id
-            if speaker == count:
-                id = voice.id
-        return id
-
-    def text2voice(self, speaker=0, text='Готов'):
-        self.tts.setProperty('voice', self.set_voice(speaker))
-        self.tts.say(text)
-        self.tts.runAndWait()
-
-
-class Recognize:
-    def __init__(self):
-        model = vosk.Model('model_small')
-        self.record = vosk.KaldiRecognizer(model, 16000)
-        self.stream()
-
-    def stream(self):
-        pa = pyaudio.PyAudio()
-        self.stream = pa.open(format=pyaudio.paInt16,
-                         channels=1,
-                         rate=16000,
-                         input=True,
-                         frames_per_buffer=8000)
-
-
-    def listen(self):
-        while True:
-            data = self.stream.read(4000, exception_on_overflow=False)
-            if self.record.AcceptWaveform(data) and len(data) > 0:
-                answer = json.loads(self.record.Result())
-                if answer['text']:
-                    yield answer['text']
-
+# Инициализация синтезатора речи
+engine = pyttsx3.init()
 
 def speak(text):
-    speech = Speech()
-    speech.text2voice(speaker=1, text=text)
+    engine.say(text)
+    engine.runAndWait()
 
+# Инициализация распознавания речи
+if not os.path.exists("model"):
+    print("Please download the model from https://alphacephei.com/vosk/models and unpack as 'model' in the current folder.")
+    exit(1)
 
-rec = Recognize()
-text_gen = rec.listen()
-rec.stream.stop_stream()
-speak('Starting')
-time.sleep(0.5)
-rec.stream.start_stream()
-for text in text_gen:
-    if text == 'закрыть':
-        speak('Бывай, ихтиандр')
-        quit()
+model = Model("model")
+rec = KaldiRecognizer(model, 16000)
+
+p = pyaudio.PyAudio()
+stream = p.open(format=pyaudio.paInt16, channels=1, rate=16000, input=True, frames_per_buffer=8192)
+stream.start_stream()
+
+# Функция для получения Lorem Ipsum текста
+def get_lorem_ipsum():
+    response = requests.get("https://loripsum.net/api/10/short/headers")
+    if response.status_code == 200:
+        return response.text
     else:
-        print(text)
+        return "Не удалось получить Lorem Ipsum текст."
+
+# Основной цикл для распознавания команд
+print("Голосовой ассистент запущен...")
+
+while True:
+    data = stream.read(4000)
+    if rec.AcceptWaveform(data):
+        result = json.loads(rec.Result())
+        command = result.get("text", "").lower()
+        
+        if "создать" in command:
+            text = get_lorem_ipsum()
+            speak("Lorem Ipsum текст создан.")
+        elif "прочесть" in command:
+            text = get_lorem_ipsum()
+            speak(text)
+        elif "сохранить" in command:
+            text = get_lorem_ipsum()
+            with open("lorem_ipsum.html", "w") as file:
+                file.write(text)
+            speak("Lorem Ipsum текст сохранен как HTML файл.")
+        elif "текст" in command:
+            text = get_lorem_ipsum()
+            with open("lorem_ipsum.txt", "w") as file:
+                file.write(text)
+            speak("Lorem Ipsum текст сохранен как текстовый файл.")
+        else:
+            speak("Команда не распознана. Попробуйте еще раз.")
